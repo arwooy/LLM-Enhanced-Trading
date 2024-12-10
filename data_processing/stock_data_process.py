@@ -71,7 +71,7 @@ def format_datetime_for_url(dt):
 def fetch_and_process_data(symbol, date):
     """
     Fetches, processes, and saves trade data for a stock symbol and date. 
-    Handles API limitations with retries, computes Time-Weighted Average Price (TWAP), 
+    Handles API limitations with retries, computes Volume-Weighted Average Price on minute level (VWAP), 
     optimizes memory usage, removes duplicates, and stores the data in a structured directory.
     """
     # Check if the CSV file already exists for this symbol and date
@@ -136,13 +136,13 @@ def fetch_and_process_data(symbol, date):
     trade_df['ClockTime'] = pd.to_datetime(trade_df['ClockTime'], errors='coerce')
     trade_df['ClockTime'] = trade_df['ClockTime'].dt.strftime('%Y-%m-%d %H:%M:%S.%f')
 
-    # Calculate the Time-Weighted Average Price (TWAP)
-    twap_df = trade_df.groupby('ClockTime').apply(
+    # Calculate the Volume-Weighted Average Price (VWAP)
+    vwap_df = trade_df.groupby('ClockTime').apply(
         lambda x: (x['lastPrice'] * x['Volume']).sum() / x['Volume'].sum()
-    ).reset_index(name='TWAP')
+    ).reset_index(name='VWAP')
     
-    # Merge the TWAP data back to the trade data
-    trade_df = pd.merge(trade_df, twap_df, on='ClockTime', how='left')
+    # Merge the VWAP data back to the trade data
+    trade_df = pd.merge(trade_df, vwap_df, on='ClockTime', how='left')
     
     # Remove duplicate entries based on 'ClockTime' and drop 'lastPrice' column
     trade_df = trade_df.drop_duplicates(subset=['ClockTime'])
@@ -153,7 +153,7 @@ def fetch_and_process_data(symbol, date):
     logging.info(f"Saved data to {csv_file_path}")
 
     # Clear trade_dict and DataFrame to free up memory, and run garbage collection
-    del trade_dict, trade_df, twap_df
+    del trade_dict, trade_df, vwap_df
     gc.collect()
 
 # Function to process all data for a single stock across all trading days
