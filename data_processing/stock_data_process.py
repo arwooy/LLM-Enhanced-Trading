@@ -22,8 +22,8 @@ logging.basicConfig(
 
 headers = {
     "accept": "application/json",
-    "APCA-API-KEY-ID": "AKUIJAC2GKCCEFQDKAYM",
-    "APCA-API-SECRET-KEY": "UYjfIbkSIQr65ImyACdZzrZg728dWspwBSJM2biq"
+    "APCA-API-KEY-ID": "YOUR-API-KEY",
+    "APCA-API-SECRET-KEY": "YOUR-API-SECRET-KEY"
 }
 
 # Parent directory to store CSV files
