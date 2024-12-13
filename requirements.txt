@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+requests
+pandas
+numpy
+pandas_market_calendars
+websocket-client
+pytz
+praw
+cohere
+newsapi-python
+pydantic
+python-multipart
