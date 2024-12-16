@@ -3,7 +3,7 @@ import json
 import time
 from collections import defaultdict
 from datetime import datetime
-import numpy as np 
+import numpy as np
 import pytz
 import logging
 
@@ -16,6 +16,7 @@ class FinnhubWebSocket:
         self.cache = defaultdict(list)  # Cache to store price and volume data
         self.latest_vwap = {}  # Store the latest VWAP results for backend access
         self.last_minute = int(time.time() / 60)  # Track the current minute
+        self.active = True  # Flag to control WebSocket activity
 
         # Configure logging
         logging.basicConfig(
@@ -26,6 +27,15 @@ class FinnhubWebSocket:
                 logging.FileHandler("finnhub_websocket.log"),
             ],
         )
+
+    def stop(self):
+        """
+        Gracefully stop the WebSocket connection.
+        """
+        self.active = False
+        if self.ws:  # Close WebSocket if it's open
+            self.ws.close()
+            logging.info("WebSocket connection closed.")
 
     def convert_to_est(self, timestamp_ms):
         """
@@ -44,7 +54,7 @@ class FinnhubWebSocket:
         total_weighted_price = sum([entry["price"] * entry["volume"] for entry in ticker_data])
         total_volume = sum([entry["volume"] for entry in ticker_data])
         if total_volume > 0:
-            return np.round(total_weighted_price / total_volume,2)
+            return np.round(total_weighted_price / total_volume, 2)
         return None  # No trades for the ticker
 
     def dump_cache_to_file(self):
@@ -75,6 +85,9 @@ class FinnhubWebSocket:
 
     def on_message(self, ws, message):
         """Handle incoming WebSocket messages."""
+        if not self.active:
+            return  # Ignore messages if WebSocket is not active
+
         data = json.loads(message)
         if "data" in data:
             for entry in data["data"]:
@@ -82,19 +95,18 @@ class FinnhubWebSocket:
                 price = entry["p"]
                 volume = entry["v"]
                 timestamp = entry["t"]
-                
+
                 # Convert timestamp to EST for logging
                 est_time = self.convert_to_est(timestamp)
-                #print(ticker,price,volume,est_time)
+
                 # Store the trade in cache
                 self.cache[ticker].append({"price": price, "volume": volume, "time": est_time})
-                #logging.info(f"Received Trade: Ticker: {ticker}, Price: {price}, Volume: {volume}, Time: {est_time}")
 
         # Check if a minute has passed
         current_minute = int(time.time() / 60)
         if current_minute != self.last_minute:
             # Dump cache to file
-            vwap_results = self.dump_cache_to_file()
+            self.dump_cache_to_file()
             self.last_minute = current_minute
 
     def on_error(self, ws, error):
@@ -102,7 +114,9 @@ class FinnhubWebSocket:
         logging.error(f"WebSocket Error: {error}")
 
     def on_close(self, ws, close_status_code, close_msg):
-        """Handle WebSocket closure and attempt reconnection."""
+        """Handle WebSocket closure."""
+        if not self.active:
+            return  # Do not attempt reconnection if WebSocket is stopped
         logging.warning("WebSocket closed. Attempting to reconnect...")
         time.sleep(self.reconnect_delay)
         self.start()  # Attempt to restart the WebSocket connection
@@ -120,6 +134,7 @@ class FinnhubWebSocket:
 
     def start(self):
         """Start the WebSocket connection."""
+        self.active = True  # Set the WebSocket as active
         websocket.enableTrace(False)  # Disable WebSocket debugging for cleaner logs
         self.ws = websocket.WebSocketApp(
             f"wss://ws.finnhub.io?token={self.api_key}",
