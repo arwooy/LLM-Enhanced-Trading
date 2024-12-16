@@ -182,7 +182,7 @@ async def sell(ticker: str = Form(...), amount: int = Form(...), price: float = 
     logging.info(trade_entry)
     return RedirectResponse(url="/", status_code=303)
 
-# Dashboard
+#Dashboard
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
     html_content = f"""
@@ -219,10 +219,10 @@ async def dashboard():
                             <td>${{item.text}}</td>
                             <td>${{item.sentiment === 1 ? 'Positive' : 'Negative'}}</td>
                             <td>${{item.probability}}</td>
-                            <td>${{item.MA_Crossover}}</td>
-                            <td>${{item.RSI}}</td>
-                            <td>${{item.Breakout}}</td>
-                            <td>${{item.Oscillator}}</td>
+                            <td>${{item.MA_Crossover === 1 ? '✅' : (item.MA_Crossover === -1 ? '❌' : 'Hold')}}</td>
+                            <td>${{item.RSI === 1 ? '✅' : (item.RSI === -1 ? '❌' : 'Hold')}}</td>
+                            <td>${{item.Breakout === 1 ? '✅' : (item.Breakout === -1 ? '❌' : 'Hold')}}</td>
+                            <td>${{item.Oscillator === 1 ? '✅' : (item.Oscillator === -1 ? '❌' : 'Hold')}}</td>
                             <td>
                                 <form action="/buy" method="post">
                                     <input type="hidden" name="ticker" value="${{item.ticker}}">
@@ -295,6 +295,7 @@ async def dashboard():
     </html>
     """
     return HTMLResponse(content=html_content)
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
