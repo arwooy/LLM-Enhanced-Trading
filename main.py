@@ -13,6 +13,7 @@ from html import escape
 import time
 import numpy as np
 import random
+from zoneinfo import ZoneInfo
 
 app = FastAPI()
 
@@ -144,7 +145,7 @@ def get_mock_data():
     # Fetch the latest news
     latest_news = text_pipeline.agg_text if text_pipeline else {}
     # Current timestamp
-    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    current_time = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S")
     
     sentiment_map = {"Positive": 1, "Negative": -1, "Neutral": 0}  # Map sentiment strings to integers
 
