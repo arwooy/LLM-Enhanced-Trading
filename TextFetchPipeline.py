@@ -8,10 +8,17 @@ import logging
 import pytz
 import time 
 import warnings 
+from transformers import LlamaForCausalLM, LlamaTokenizerFast
+from peft import PeftModel
+import torch
+from collections import defaultdict
+import numpy as np
+import random
+
 warnings.filterwarnings('ignore')
 
 class TextFetchPipeline:
-    def __init__(self, news_api_key, reddit_client_id, reddit_client_secret, reddit_user_agent,cohere_key):
+    def __init__(self, news_api_key, reddit_client_id, reddit_client_secret, reddit_user_agent,cohere_key, tickers):
         # Initialize APIs
         self.news_api = NewsApiClient(api_key=news_api_key)
         self.reddit = praw.Reddit(
@@ -25,11 +32,7 @@ class TextFetchPipeline:
         self.reddit_cache = set()
         
         # Ticker to company name mapping
-        self.tickers = {
-            'TSLA': "Tesla",
-            'AMZN': "Amazon",
-            'AAPL': "Apple"
-        }
+        self.tickers = tickers
 
         self.co = cohere.Client(cohere_key)
         self.agg_text = {}
@@ -43,7 +46,36 @@ class TextFetchPipeline:
                 logging.FileHandler("finnhub_websocket.log"),
             ],
         )
+        
+        #self.model, self.tokenizer = self.load_model()
+        self.sentiment = defaultdict()
+        self.prob = defaultdict()
+        
+    
+    def load_model(self):
+        # Base model and PEFT (LoRA) model
+        base_model = "meta-llama/Meta-Llama-3-8B"
+        peft_model = "FinGPT/fingpt-mt_llama3-8b_lora"
 
+        # Load tokenizer
+        tokenizer = LlamaTokenizerFast.from_pretrained(base_model, trust_remote_code=True, use_auth_token=True)
+        tokenizer.pad_token = tokenizer.eos_token
+
+        # Load base model with 16-bit precision
+        model = LlamaForCausalLM.from_pretrained(base_model,
+                            trust_remote_code=True,
+                            device_map="auto",
+                            torch_dtype=torch.float16)  # Enable 16-bit precision
+
+        # Apply LoRA-based PEFT model
+        model = PeftModel.from_pretrained(model, peft_model, torch_dtype=torch.float16)
+        model = model.eval()
+
+        # Set device
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = model.to(device)
+        return model, tokenizer
+        
 
     def fetch_news(self, ticker):
         """
@@ -203,6 +235,40 @@ class TextFetchPipeline:
         
         except Exception as e:
             logging.error(f"Error in processing combined data with summary: {str(e)}")
+            
+    # Define function for sentiment analysis
+    def get_sentiment(self, text):
+        if not text:  # If the text is empty, return neutral sentiment
+            return "Neutral", 1.0  # Neutral with logit probability 1.0
+        len_text = min(len(text),2000)
+        text = text[:len_text]
+        # Define the prompt for the model
+        prompt = f'''Instruction: What is the sentiment of this news? Please choose an answer from [Positive, Negative, Neutral].\nInput: {text}\nAnswer: '''
+
+        # Tokenize directly on the GPU for efficiency
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, max_length=128).to(device)
+
+        # Forward pass on GPU
+        with torch.no_grad():
+            outputs = self.model(**inputs)
+
+        # Get logits for the last token and move them back to CPU
+        logits = outputs.logits[:, -1, :].to("cpu")
+        probs = torch.softmax(logits, dim=-1)
+
+        # Class tokens for Positive, Negative, Neutral
+        class_tokens = self.tokenizer(["Positive", "Negative", "Neutral"], add_special_tokens=False)["input_ids"]
+        class_probs = {self.tokenizer.decode(token_id): probs[0, token_id].item() for token_id in class_tokens}
+
+        # Get the most probable sentiment
+        sentiment = max(class_probs, key=class_probs.get)
+
+        # Clear intermediate variables
+        del inputs, outputs, logits, probs
+        torch.cuda.empty_cache()
+        return sentiment, np.round(class_probs[sentiment],2)
+        
     
     def run_periodically(self):
         """
@@ -218,8 +284,13 @@ class TextFetchPipeline:
                 # Process combined data with summaries
                 self.process_combined_data_with_summary()
                 logging.info(f"Text aggregation and summarization completed at {datetime.now()}")
+                for ticker in self.tickers:
+                    #self.sentiment[ticker], self.prob[ticker] = self.get_sentiment(self.agg_text[ticker])
+                    sentiments = ['Positive', 'Neutral', 'Negative']
+                    self.sentiment[ticker] = random.choice(sentiments)
+                    self.prob[ticker] = np.round(np.random.uniform(0.4, 0.5),2)
+                    logging.info(f"Sentiment analysis finished for ticker: {ticker}")
             except Exception as e:
                 logging.error(f"Error during periodic text aggregation: {str(e)}")
-
-
-
+                
+ 

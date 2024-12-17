@@ -142,6 +142,40 @@ class SignalGeneration:
         elif k_percent < oversold:
             return 1  # Buy
         return 0  # Hold
+    
+    def breakout_signal(self, vwap_array, lookback_period=15, breakout_margin=0.01):
+        """
+        Generate breakout trading signals based on support and resistance levels.
+
+        Parameters:
+            vwap_array (np.ndarray): 1D array containing VWAP prices.
+            lookback_period (int): The number of periods to calculate support and resistance.
+            breakout_margin (float): The percentage margin for breakout confirmation.
+
+        Returns:
+            int: Signal value (1 for Buy, -1 for Sell, 0 for Hold).
+        """
+        
+        if len(vwap_array) < lookback_period:
+            return 0 # Not enough data for breakout trading
+        
+        # Use the last `lookback_period` VWAP values
+        price_range = vwap_array[-lookback_period:]
+        resistance = max(price_range) # highest price in the lookback period 
+        support = min(price_range) # lowest price in the lookback period 
+        
+        current_price = vwap_array[-1]
+        
+        # defining the breakout thresholds
+        resistance_threshold = resistance + breakout_margin*resistance
+        support_threshold = support - breakout_margin*support
+        
+        # generating breakout signals
+        if current_price < support_threshold:
+            return -1 # Sell signal (Breakout below support)
+        elif current_price > resistance_threshold:
+            return 1 # Buy signal (Breakout above resistance)
+        return 0  # Hold (No Breakout)
 
     def calculate_signals(self):
         """
@@ -157,6 +191,7 @@ class SignalGeneration:
                 "SMA": self.sma_signal(vwap_array),
                 "RSI": self.calculate_rsi_signal(vwap_array),
                 "Stochastic": self.stochastic_signal(vwap_array),
+                "breakout": self.breakout_signal(vwap_array)
             }
             self.signals[ticker] = signals
 
