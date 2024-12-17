@@ -150,7 +150,7 @@ def get_mock_data():
 
     # Generate data dynamically for each ticker
     
-    # TESTING
+    # for TESTING purposes only
     sentiments = ['Positive', 'Neutral', 'Negative']
     random_sentiment = random.choice(sentiments)
     random_prob = np.round(np.random.uniform(0.4, 0.5),2)
