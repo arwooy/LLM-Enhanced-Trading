@@ -1,0 +1,13 @@
+2024-12-17 15:15:41,871 - INFO - Websocket connected
+2024-12-17 15:15:41,872 - INFO - Subscribed to: AAPL
+2024-12-17 15:15:41,872 - INFO - Subscribed to: AMZN
+2024-12-17 15:15:41,873 - INFO - Subscribed to: TSLA
+2024-12-17 15:16:00,972 - INFO - Cache dumped and saved to 20241217_151600.txt
+2024-12-17 15:16:00,972 - INFO - VWAP results updated
+2024-12-17 15:16:04,918 - INFO - HTTP Request: POST https://api.cohere.com/v1/summarize "HTTP/1.1 200 OK"
+2024-12-17 15:16:04,922 - INFO - Aggregated and summarized text data successfully.
+2024-12-17 15:16:04,922 - INFO - Text aggregation and summarization completed at 2024-12-17 15:16:04.922999
+2024-12-17 15:16:04,922 - INFO - Sentiment analysis finished for ticker: AAPL
+2024-12-17 15:16:04,923 - INFO - Sentiment analysis finished for ticker: AMZN
+2024-12-17 15:16:04,923 - INFO - Sentiment analysis finished for ticker: TSLA
+2024-12-17 15:16:05,834 - INFO - VWAP updated for signal calculation at 2024-12-17 15:16:05.834348

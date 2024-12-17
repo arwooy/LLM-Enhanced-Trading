@@ -21,7 +21,7 @@ app = FastAPI()
 reddit_client_secret = 'sfFdYwuZWqofiqro51zGlKcJiC2YiQ'
 reddit_client_id = 'mNEnO4swPUjezEf92dxgxg'
 reddit_user_agent = 'LLM class project'
-news_api_key = '401ac3f457c64606a460107936a62709'
+news_api_key = 'ac76d202d8334ca99c5aff702f8cd499'
 cohere_key = 'g1jNECQNHhEnlRhvMjba89qnPdeEPch9SvhmFMiN'
 finnhub_token = 'ctahnvpr01qrt5hhnbg0ctahnvpr01qrt5hhnbgg'
 

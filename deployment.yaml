@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
       - name: fastapi-container
-        image: gcr.io/llm-trading-deployment/fastapi-app:v7
+        image: gcr.io/llm-trading-deployment/fastapi-app:v10
         ports:
         - containerPort: 8000
         resources:  # Optional, can be omitted for Autopilot
