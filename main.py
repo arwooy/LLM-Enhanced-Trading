@@ -11,6 +11,8 @@ from SignalGenerator import SignalGeneration
 import threading
 from html import escape
 import time
+import numpy as np
+import random
 
 app = FastAPI()
 
@@ -18,7 +20,7 @@ app = FastAPI()
 reddit_client_secret = 'sfFdYwuZWqofiqro51zGlKcJiC2YiQ'
 reddit_client_id = 'mNEnO4swPUjezEf92dxgxg'
 reddit_user_agent = 'LLM class project'
-news_api_key = '64bdffafcd6b400b8ba5b42e321240a1'
+news_api_key = '401ac3f457c64606a460107936a62709'
 cohere_key = 'g1jNECQNHhEnlRhvMjba89qnPdeEPch9SvhmFMiN'
 finnhub_token = 'ctahnvpr01qrt5hhnbg0ctahnvpr01qrt5hhnbgg'
 
@@ -33,7 +35,8 @@ text_pipeline = TextFetchPipeline(
     reddit_client_id,
     reddit_client_secret,
     reddit_user_agent,
-    cohere_key
+    cohere_key, 
+    tickers
 )
 stock_pipeline = FinnhubWebSocket(finnhub_token, tickers)
 signal_generator = SignalGeneration(buffer_size=30)
@@ -65,7 +68,8 @@ def start_pipelines():
         reddit_client_id,
         reddit_client_secret,
         reddit_user_agent,
-        cohere_key
+        cohere_key, 
+        tickers
     )
     signal_generator = SignalGeneration(buffer_size=30)
 
@@ -141,19 +145,27 @@ def get_mock_data():
     latest_news = text_pipeline.agg_text if text_pipeline else {}
     # Current timestamp
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    sentiment_map = {"Positive": 1, "Negative": -1, "Neutral": 0}  # Map sentiment strings to integers
 
     # Generate data dynamically for each ticker
+    
+    # TESTING
+    sentiments = ['Positive', 'Neutral', 'Negative']
+    random_sentiment = random.choice(sentiments)
+    random_prob = np.round(np.random.uniform(0.4, 0.5),2)
+    
     mock_data = [
         CombinedData(
             ticker=ticker,
             VWAP=latest_vwap.get(ticker, 0.0),
             time=current_time,
             text=latest_news.get(ticker, "No data available."),
-            sentiment=1,
-            probability=0.9,
+            sentiment=sentiment_map.get(text_pipeline.sentiment.get(ticker, random_sentiment), 0),
+            probability=text_pipeline.prob.get(ticker, random_prob),
             MA_Crossover=latest_signals.get(ticker, {}).get("SMA", 0),
             RSI=latest_signals.get(ticker, {}).get("RSI", 0),
-            Breakout=0,
+            Breakout=latest_signals.get(ticker, {}).get("breakout", 0),
             Oscillator=latest_signals.get(ticker, {}).get("Stochastic", 0),
             Signal=1
         )
@@ -217,7 +229,7 @@ async def dashboard():
                             <td>${{item.VWAP}}</td>
                             <td>${{item.time}}</td>
                             <td>${{item.text}}</td>
-                            <td>${{item.sentiment === 1 ? 'Positive' : 'Negative'}}</td>
+                            <td>${{item.sentiment === 1 ? 'Positive' : (item.sentiment === -1 ? 'Negative' : 'Neutral')}}</td>
                             <td>${{item.probability}}</td>
                             <td>${{item.MA_Crossover === 1 ? '✅' : (item.MA_Crossover === -1 ? '❌' : 'Hold')}}</td>
                             <td>${{item.RSI === 1 ? '✅' : (item.RSI === -1 ? '❌' : 'Hold')}}</td>
