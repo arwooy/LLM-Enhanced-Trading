@@ -172,7 +172,6 @@ class TextFetchPipeline:
         }
  
 
-
         self.tickers = defaultdict()
 
         self.co = cohere.Client(cohere_key)
@@ -430,10 +429,11 @@ class TextFetchPipeline:
                 self.process_combined_data_with_summary()
                 logging.info(f"Text aggregation and summarization completed at {datetime.now()}")
                 for ticker in self.tickers:
-                    #self.sentiment[ticker], self.prob[ticker] = self.get_sentiment(self.agg_text[ticker])
-                    sentiments = ['Positive', 'Neutral', 'Negative']
-                    self.sentiment[ticker] = random.choice(sentiments)
-                    self.prob[ticker] = np.round(np.random.uniform(0.4, 0.5),2)
+                    self.sentiment[ticker], self.prob[ticker] = self.get_sentiment(self.agg_text[ticker])
+                    #Code for testinig 
+                    # sentiments = ['Positive', 'Neutral', 'Negative']
+                    # self.sentiment[ticker] = random.choice(sentiments)
+                    # self.prob[ticker] = np.round(np.random.uniform(0.4, 0.5),2)
                     logging.info(f"Sentiment analysis finished for ticker: {ticker}")
             except Exception as e:
                 logging.error(f"Error during periodic text aggregation: {str(e)}")
