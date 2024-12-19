@@ -143,39 +143,31 @@ class SignalGeneration:
             return 1  # Buy
         return 0  # Hold
     
-    def breakout_signal(self, vwap_array, lookback_period=15, breakout_margin=0.01):
+    def breakout_signal(self, price_array, lookback_period=20, breakout_threshold=1.02, breakdown_threshold=0.98):
         """
-        Generate breakout trading signals based on support and resistance levels.
+        Calculates a Breakout Signal based on recent price highs and lows.
 
         Parameters:
-            vwap_array (np.ndarray): 1D array containing VWAP prices.
-            lookback_period (int): The number of periods to calculate support and resistance.
-            breakout_margin (float): The percentage margin for breakout confirmation.
+            price_array (np.ndarray): 1D array containing price data.
+            lookback_period (int): Lookback period to determine breakout levels.
+            breakout_threshold (float): Multiplier for breakout level.
+            breakdown_threshold (float): Multiplier for breakdown level.
 
         Returns:
             int: Signal value (1 for Buy, -1 for Sell, 0 for Hold).
         """
-        
-        if len(vwap_array) < lookback_period:
-            return 0 # Not enough data for breakout trading
-        
-        # Use the last `lookback_period` VWAP values
-        price_range = vwap_array[-lookback_period:]
-        resistance = max(price_range) # highest price in the lookback period 
-        support = min(price_range) # lowest price in the lookback period 
-        
-        current_price = vwap_array[-1]
-        
-        # defining the breakout thresholds
-        resistance_threshold = resistance + breakout_margin*resistance
-        support_threshold = support - breakout_margin*support
-        
-        # generating breakout signals
-        if current_price < support_threshold:
-            return -1 # Sell signal (Breakout below support)
-        elif current_price > resistance_threshold:
-            return 1 # Buy signal (Breakout above resistance)
-        return 0  # Hold (No Breakout)
+        if len(price_array) < lookback_period:
+            return 0  # Not enough data for Breakout Signal
+
+        highest_high = np.max(price_array[-lookback_period:])
+        lowest_low = np.min(price_array[-lookback_period:])
+        current_price = price_array[-1]
+
+        if current_price > highest_high * breakout_threshold:
+            return 1  # Buy
+        elif current_price < lowest_low * breakdown_threshold:
+            return -1  # Sell
+        return 0  # Hold
 
     def calculate_signals(self):
         """
@@ -191,7 +183,7 @@ class SignalGeneration:
                 "SMA": self.sma_signal(vwap_array),
                 "RSI": self.calculate_rsi_signal(vwap_array),
                 "Stochastic": self.stochastic_signal(vwap_array),
-                "breakout": self.breakout_signal(vwap_array)
+                'Breakout':self.breakout_signal(vwap_array)
             }
             self.signals[ticker] = signals
 
