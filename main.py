@@ -21,7 +21,7 @@ app = FastAPI()
 reddit_client_secret = 'sfFdYwuZWqofiqro51zGlKcJiC2YiQ'
 reddit_client_id = 'mNEnO4swPUjezEf92dxgxg'
 reddit_user_agent = 'LLM class project'
-news_api_key = 'ac76d202d8334ca99c5aff702f8cd499'
+news_api_key = '3552c203a47949e89d45c63ca614ce16'
 cohere_key = 'g1jNECQNHhEnlRhvMjba89qnPdeEPch9SvhmFMiN'
 finnhub_token = 'ctahnvpr01qrt5hhnbg0ctahnvpr01qrt5hhnbgg'
 
@@ -152,9 +152,9 @@ def get_mock_data():
     # Generate data dynamically for each ticker
     
     # for TESTING purposes only
-    sentiments = ['Positive', 'Neutral', 'Negative']
-    random_sentiment = random.choice(sentiments)
-    random_prob = np.round(np.random.uniform(0.4, 0.5),2)
+    # sentiments = ['Positive', 'Neutral', 'Negative']
+    # random_sentiment = random.choice(sentiments)
+    # random_prob = np.round(np.random.uniform(0.4, 0.5),2)
     
     mock_data = [
         CombinedData(
@@ -162,11 +162,11 @@ def get_mock_data():
             VWAP=latest_vwap.get(ticker, 0.0),
             time=current_time,
             text=latest_news.get(ticker, "No data available."),
-            sentiment=sentiment_map.get(text_pipeline.sentiment.get(ticker, random_sentiment), 0),
-            probability=text_pipeline.prob.get(ticker, random_prob),
+            sentiment=sentiment_map.get(text_pipeline.sentiment.get(ticker, 'Neutral'), 0),
+            probability=text_pipeline.prob.get(ticker, 1.0),
             MA_Crossover=latest_signals.get(ticker, {}).get("SMA", 0),
             RSI=latest_signals.get(ticker, {}).get("RSI", 0),
-            Breakout=latest_signals.get(ticker, {}).get("breakout", 0),
+            Breakout=latest_signals.get(ticker, {}).get("Breakout", 0),
             Oscillator=latest_signals.get(ticker, {}).get("Stochastic", 0),
             Signal=1
         )
