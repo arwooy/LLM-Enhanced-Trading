@@ -72,7 +72,8 @@ def start_pipelines():
         reddit_client_secret,
         reddit_user_agent,
         cohere_key, 
-        tickers
+        tickers, 
+        hf_token
     )
     signal_generator = SignalGeneration(buffer_size=30)
 
