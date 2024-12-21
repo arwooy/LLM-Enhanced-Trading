@@ -9,11 +9,11 @@ from LiveStockPricePipeline import FinnhubWebSocket
 from TextFetchPipeline import TextFetchPipeline
 from SignalGenerator import SignalGeneration
 import threading
-from html import escape
-import time
-import numpy as np
-import random
 from zoneinfo import ZoneInfo
+from transformers import LlamaForCausalLM, LlamaTokenizerFast
+from peft import PeftModel
+import torch
+from huggingface_hub import login
 
 app = FastAPI()
 
@@ -31,7 +31,37 @@ tickers = ['AAPL', 'AMZN', 'TSLA']  # Initial tickers
 pipeline_threads = []
 trade_log = []  # Store trade logs
 
-# Initialize pipelines
+# Load model and tokenizer globally 
+def load_model_and_tokenizer(hf_token):
+    # Authenticate Hugging Face Hub
+    login(hf_token)
+
+    # Model details
+    base_model = "meta-llama/Meta-Llama-3-8B"
+    peft_model = "FinGPT/fingpt-mt_llama3-8b_lora"
+
+    # Load tokenizer
+    tokenizer = LlamaTokenizerFast.from_pretrained(base_model, trust_remote_code=True, use_auth_token=True)
+    tokenizer.pad_token = tokenizer.eos_token
+
+    # Load base model with 16-bit precision
+    model = LlamaForCausalLM.from_pretrained(
+        base_model,
+        trust_remote_code=True,
+        device_map="auto",
+        torch_dtype=torch.float16
+    )
+
+    # Apply LoRA-based PEFT model
+    model = PeftModel.from_pretrained(model, peft_model, torch_dtype=torch.float16)
+    model = model.eval()
+
+    return model, tokenizer
+
+# Load model and tokenizer
+model, tokenizer = load_model_and_tokenizer(hf_token)
+
+# Initialize pipelines with pre-loaded model and tokenizer
 text_pipeline = TextFetchPipeline(
     news_api_key,
     reddit_client_id,
@@ -39,7 +69,8 @@ text_pipeline = TextFetchPipeline(
     reddit_user_agent,
     cohere_key, 
     tickers,
-    hf_token
+    model=model,
+    tokenizer=tokenizer
 )
 stock_pipeline = FinnhubWebSocket(finnhub_token, tickers)
 signal_generator = SignalGeneration(buffer_size=30)
@@ -73,7 +104,8 @@ def start_pipelines():
         reddit_user_agent,
         cohere_key, 
         tickers, 
-        hf_token
+        model=model, 
+        tokenizer=tokenizer
     )
     signal_generator = SignalGeneration(buffer_size=30)
 

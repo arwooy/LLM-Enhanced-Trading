@@ -18,7 +18,7 @@ from huggingface_hub import login
 warnings.filterwarnings('ignore')
 
 class TextFetchPipeline:
-    def __init__(self, news_api_key, reddit_client_id, reddit_client_secret, reddit_user_agent,cohere_key, tickers,hf_token):
+    def __init__(self, news_api_key, reddit_client_id, reddit_client_secret, reddit_user_agent, cohere_key, tickers, model, tokenizer):
         # Initialize APIs
         self.news_api = NewsApiClient(api_key=news_api_key)
         self.reddit = praw.Reddit(
@@ -26,8 +26,6 @@ class TextFetchPipeline:
             client_secret=reddit_client_secret,
             user_agent=reddit_user_agent
         )
-
-        self.hf_token = hf_token
         
         # Cache to avoid duplicate processing
         self.news_cache = set()
@@ -188,40 +186,17 @@ class TextFetchPipeline:
                 logging.FileHandler("finnhub_websocket.log"),
             ],
         )
-        
-        self.model, self.tokenizer = self.load_model()
+
+        # Model and tokenizer passed from main
+        self.model = model
+        self.tokenizer = tokenizer
         self.sentiment = defaultdict()
         self.prob = defaultdict()
+
         for ticker in tickers:
-            self.tickers[ticker] = self.ticker_company_map[ticker]
+            self.tickers[ticker] = self.ticker_company_map.get(ticker, "Unknown Company")
             self.sentiment[ticker] = 'Neutral'
             self.prob[ticker] = 1.0 
-        
-    
-    def load_model(self):
-        login(self.hf_token)
-        # Base model and PEFT (LoRA) model
-        base_model = "meta-llama/Meta-Llama-3-8B"
-        peft_model = "FinGPT/fingpt-mt_llama3-8b_lora"
-
-        # Load tokenizer
-        tokenizer = LlamaTokenizerFast.from_pretrained(base_model, trust_remote_code=True, use_auth_token=True)
-        tokenizer.pad_token = tokenizer.eos_token
-
-        # Load base model with 16-bit precision
-        model = LlamaForCausalLM.from_pretrained(base_model,
-                            trust_remote_code=True,
-                            device_map="auto",
-                            torch_dtype=torch.float16)  # Enable 16-bit precision
-
-        # Apply LoRA-based PEFT model
-        model = PeftModel.from_pretrained(model, peft_model, torch_dtype=torch.float16)
-        model = model.eval()
-
-        # Set device
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        model = model.to(device)
-        return model, tokenizer
         
 
     def fetch_news(self, ticker):
