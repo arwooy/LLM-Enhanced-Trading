@@ -24,6 +24,7 @@ reddit_user_agent = 'LLM class project'
 news_api_key = '3552c203a47949e89d45c63ca614ce16'
 cohere_key = 'g1jNECQNHhEnlRhvMjba89qnPdeEPch9SvhmFMiN'
 finnhub_token = 'ctahnvpr01qrt5hhnbg0ctahnvpr01qrt5hhnbgg'
+hf_token = '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'
 
 # Global variables
 tickers = ['AAPL', 'AMZN', 'TSLA']  # Initial tickers
@@ -37,7 +38,8 @@ text_pipeline = TextFetchPipeline(
     reddit_client_secret,
     reddit_user_agent,
     cohere_key, 
-    tickers
+    tickers,
+    hf_token
 )
 stock_pipeline = FinnhubWebSocket(finnhub_token, tickers)
 signal_generator = SignalGeneration(buffer_size=30)
