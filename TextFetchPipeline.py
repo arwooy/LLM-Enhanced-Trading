@@ -14,11 +14,11 @@ import torch
 from collections import defaultdict
 import numpy as np
 import random
-
+from huggingface_hub import login
 warnings.filterwarnings('ignore')
 
 class TextFetchPipeline:
-    def __init__(self, news_api_key, reddit_client_id, reddit_client_secret, reddit_user_agent,cohere_key, tickers):
+    def __init__(self, news_api_key, reddit_client_id, reddit_client_secret, reddit_user_agent,cohere_key, tickers,hf_token):
         # Initialize APIs
         self.news_api = NewsApiClient(api_key=news_api_key)
         self.reddit = praw.Reddit(
@@ -26,6 +26,8 @@ class TextFetchPipeline:
             client_secret=reddit_client_secret,
             user_agent=reddit_user_agent
         )
+
+        self.hf_token = hf_token
         
         # Cache to avoid duplicate processing
         self.news_cache = set()
@@ -187,7 +189,7 @@ class TextFetchPipeline:
             ],
         )
         
-        #self.model, self.tokenizer = self.load_model()
+        self.model, self.tokenizer = self.load_model()
         self.sentiment = defaultdict()
         self.prob = defaultdict()
         for ticker in tickers:
@@ -197,6 +199,7 @@ class TextFetchPipeline:
         
     
     def load_model(self):
+        login(self.hf_token)
         # Base model and PEFT (LoRA) model
         base_model = "meta-llama/Meta-Llama-3-8B"
         peft_model = "FinGPT/fingpt-mt_llama3-8b_lora"
