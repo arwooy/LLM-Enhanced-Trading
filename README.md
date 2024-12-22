@@ -35,13 +35,13 @@ Backtesting of the trading system was conducted using historical stock prices an
 2. **Sentiment-Enhanced Framework**: Incorporated sentiment signals with technical indicators, dynamically adjusting trade sizes based on sentiment strength.
 Key performance metrics such as Sharpe Ratio and Win Ratio were used to evaluate the effectiveness of sentiment integration.
 
-## Backtesting Metrics
+### Backtesting Metrics
 
 **Sharpe Ratio**: The **Sharpe Ratio** measures risk-adjusted returns by evaluating the excess return per unit of volatility. A higher Sharpe Ratio indicates better risk-adjusted performance. 
 
 **Win Ratio**: The **Win Ratio** represents the percentage of profitable trades executed over the total number of trades. A higher Win Ratio indicates greater consistency in achieving profitable trades.  
 
-## Backtesting Results and Comparison Table
+### Backtesting Results and Comparison Table
 
 Sentiment integration demonstrated significant improvements in trading performance across both the evaluated metrics:
 
@@ -67,7 +67,7 @@ Sentiment integration demonstrated significant improvements in trading performan
 | AAPL        | 2.13               | 54.9%                 | 1.58               | 50.9%                 | 1.61               | 72.1%                 |
 | AMZN        | 3.14               | 64.3%                 | 2.32               | 52.0%                 | -1.03              | 65.1%                 |
 
-## Key Insights 
+### Key Insights 
 
 1. **Enhanced Predictive Power**: Sentiment signals capture market dynamics and investor sentiment that traditional indicators often miss, particularly for volatile stocks like TSLA.
 2. **Strategy Versatility**: Sentiment integration complements various trading strategies, significantly improving their robustness and effectiveness.
@@ -75,6 +75,7 @@ Sentiment integration demonstrated significant improvements in trading performan
 4. **Practical Utility for Traders**: Sentiment-integrated strategies offer actionable insights, enhancing decision-making even when technical indicators produce ambiguous signals.
 
 These findings demonstrate that integrating sentiment with technical indicators improves both risk-adjusted performance (Sharpe Ratio) and trade profitability consistency (Win Ratio). This approach reduces volatility and enables more reliable trading outcomes.
+
 
 
 # Tutorial
