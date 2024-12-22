@@ -141,7 +141,7 @@ The system was deployed the system using a production-grade setup, leveraging Do
 
 A comprehensive video tutorial is included in this section to demonstrate the deployment process of the application. The video provides step-by-step guidance on setting up the Kubernetes cluster, building and pushing the Docker image, and deploying the application using the provided YAML files. Additionally, it highlights key aspects such as scaling with Horizontal Pod Autoscaling (HPA). This tutorial ensures users can understand the entire setup process.
 
-[![Watch the Deployment Video](https://img.youtube.com/vi/MMO_Y8ms9kk/0.jpg)](https://www.youtube.com/watch?v=MMO_Y8ms9kk)
+[![Watch the Deployment Video](https://img.youtube.com/vi/MMO_Y8ms9kk/0.jpg)](https://youtu.be/MMO_Y8ms9kk)
 
 # **How to run the application ?**
 
@@ -264,5 +264,5 @@ Ensure that you run this application in an environment with GPU support, as the 
 
 A detailed video tutorial is provided to guide users on interpreting the stock dashboard and effectively utilizing its features for making informed trades. The tutorial walks users through the various components of the dashboard, explaining how to analyze stock sentiment, technical indicators, and actionable signals. Additionally, the video demonstrates real-world examples of a few trades, showcasing the step-by-step process of making trading decisions based on the insights provided by the system. This tutorial serves as a comprehensive resource to help users maximize the potential of the stock dashboard for their trading strategies.
 
-[![User Tutorial](https://img.youtube.com/vi/6WdB-Rn9ie/0.jpg)](https://youtu.be/6WdB-Rn9ieA)
+[![User Tutorial](https://img.youtube.com/vi/6WdB-Rn9ieA/0.jpg)](https://youtu.be/6WdB-Rn9ieA)
 
