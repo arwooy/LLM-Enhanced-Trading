@@ -14,17 +14,26 @@ from transformers import LlamaForCausalLM, LlamaTokenizerFast
 from peft import PeftModel
 import torch
 from huggingface_hub import login
+from dotenv import load_dotenv
+import os
 
 app = FastAPI()
 
-# Example keys if needed
-reddit_client_secret = 'sfFdYwuZWqofiqro51zGlKcJiC2YiQ'
-reddit_client_id = 'mNEnO4swPUjezEf92dxgxg'
-reddit_user_agent = 'LLM class project'
-news_api_key = '3552c203a47949e89d45c63ca614ce16'
-cohere_key = 'g1jNECQNHhEnlRhvMjba89qnPdeEPch9SvhmFMiN'
-finnhub_token = 'ctahnvpr01qrt5hhnbg0ctahnvpr01qrt5hhnbgg'
-hf_token = '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'
+# Load the .env file
+load_dotenv()
+
+
+# Load keys from .env file
+reddit_client_secret = os.getenv('REDDIT_CLIENT_SECRET')
+reddit_client_id = os.getenv('REDDIT_CLIENT_ID')
+reddit_user_agent = os.getenv('REDDIT_USER_AGENT')
+news_api_key = os.getenv('NEWS_API_KEY')
+cohere_key = os.getenv('COHERE_KEY')
+finnhub_token = os.getenv('FINNHUB_TOKEN')
+hf_token = os.getenv('HF_TOKEN')
+
+if not all([reddit_client_secret, reddit_client_id, reddit_user_agent, news_api_key, cohere_key, finnhub_token, hf_token]):
+    raise EnvironmentError("Missing one or more environment variables. Please specify them in the .env file.")
 
 # Global variables
 tickers = ['AAPL', 'AMZN', 'TSLA']  # Initial tickers

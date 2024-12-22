@@ -19,3 +19,4 @@ torch
 datasets
 bitsandbytes
 huggingface-hub
+python-dotenv
