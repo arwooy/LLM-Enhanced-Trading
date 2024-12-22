@@ -27,6 +27,7 @@ In comparison, IBM Granite 3.0 and Meta LLaMA 3.1 struggled due to their lack of
 
 FinGPT’s specialization and adaptability make it the most promising candidate for real-time decision-making in sentiment-driven trading strategies.
 
+
 # Backtesting Sentiment Integration
 
 Backtesting of the trading system was conducted using historical stock prices and sentiment data from Reddit (2022–2023). Two frameworks were evaluated:
@@ -35,11 +36,13 @@ Backtesting of the trading system was conducted using historical stock prices an
 2. **Sentiment-Enhanced Framework**: Incorporated sentiment signals with technical indicators, dynamically adjusting trade sizes based on sentiment strength.
 Key performance metrics such as Sharpe Ratio and Win Ratio were used to evaluate the effectiveness of sentiment integration.
 
+
 ### Backtesting Metrics
 
 **Sharpe Ratio**: The **Sharpe Ratio** measures risk-adjusted returns by evaluating the excess return per unit of volatility. A higher Sharpe Ratio indicates better risk-adjusted performance. 
 
 **Win Ratio**: The **Win Ratio** represents the percentage of profitable trades executed over the total number of trades. A higher Win Ratio indicates greater consistency in achieving profitable trades.  
+
 
 ### Backtesting Results and Comparison Table
 
@@ -56,6 +59,7 @@ Sentiment integration demonstrated significant improvements in trading performan
 - Similar improvements were observed in AAPL and AMZN for sentiment-driven strategies.
 
 
+
 | **Tickers** | **Strat1 Sharpe** | **Strat1 Win Ratio** | **Strat2 Sharpe** | **Strat2 Win Ratio** | **Strat3 Sharpe** | **Strat3 Win Ratio** |
 |-------------|--------------------|-----------------------|--------------------|-----------------------|--------------------|-----------------------|
 | **Baseline**            |                    |                       |                    |                       |                    |                       |
@@ -67,6 +71,7 @@ Sentiment integration demonstrated significant improvements in trading performan
 | AAPL        | 2.13               | 54.9%                 | 1.58               | 50.9%                 | 1.61               | 72.1%                 |
 | AMZN        | 3.14               | 64.3%                 | 2.32               | 52.0%                 | -1.03              | 65.1%                 |
 
+
 ### Key Insights 
 
 1. **Enhanced Predictive Power**: Sentiment signals capture market dynamics and investor sentiment that traditional indicators often miss, particularly for volatile stocks like TSLA.
@@ -75,6 +80,17 @@ Sentiment integration demonstrated significant improvements in trading performan
 4. **Practical Utility for Traders**: Sentiment-integrated strategies offer actionable insights, enhancing decision-making even when technical indicators produce ambiguous signals.
 
 These findings demonstrate that integrating sentiment with technical indicators improves both risk-adjusted performance (Sharpe Ratio) and trade profitability consistency (Win Ratio). This approach reduces volatility and enables more reliable trading outcomes.
+
+```mermaid
+flowchart TD
+    User -->|Inputs ticker| FrontEnd
+    FrontEnd --> BackEnd
+    BackEnd -->|Sends to pipeline| StockDataPipeline
+    BackEnd -->|Sends to pipeline| TextDataPipeline
+    StockDataPipeline -->|Generates| SignalGenerator
+    TextDataPipeline -->|Generates| SignalGenerator
+    SignalGenerator --> FrontEnd
+    FrontEnd -->|Presents data| User
 
 
 
