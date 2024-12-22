@@ -87,12 +87,11 @@ flowchart TD
     FrontEnd --> BackEnd
     BackEnd -->|Sends to pipeline| StockDataPipeline
     BackEnd -->|Sends to pipeline| TextDataPipeline
-    StockDataPipeline -->|Generates| SignalGenerator
-    TextDataPipeline -->|Generates| SignalGenerator
+    StockDataPipeline -->|Generates signals| SignalGenerator
+    TextDataPipeline -->|Generates signals| SignalGenerator
     SignalGenerator --> FrontEnd
     FrontEnd -->|Presents data| User
-
-
+```
 
 # Tutorial
 [![User Tutorial](https://img.youtube.com/vi/6WdB-Rn9ieA/0.jpg)](https://youtu.be/6WdB-Rn9ieA)
