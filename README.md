@@ -44,10 +44,14 @@ Key performance metrics such as Sharpe Ratio and Win Ratio were used to evaluate
 ## Backtesting Results and Comparison Table
 
 Sentiment integration demonstrated significant improvements in trading performance across both the evaluated metrics:
-**Sharpe Ratio**: Sentiment integration significantly boosted risk-adjusted returns across all tickers. For example:
+
+**Sharpe Ratio**: Sentiment integration significantly boosted risk-adjusted returns across all tickers.
+
 - TSLA's SMA strategy improved from **0.34 to 3.47**.
 - AAPL and AMZN also exhibited substantial positive shifts.
-**Win Ratio**: The proportion of profitable trades increased notably with sentiment integration. For example:
+
+**Win Ratio**: The proportion of profitable trades increased notably with sentiment integration.
+  
 - TSLA’s SMA strategy win ratio rose from **32.2% to 57.0%**.
 - Similar improvements were observed in AAPL and AMZN for sentiment-driven strategies.
 
