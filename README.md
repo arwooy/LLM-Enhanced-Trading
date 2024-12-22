@@ -81,17 +81,7 @@ Sentiment integration demonstrated significant improvements in trading performan
 
 These findings demonstrate that integrating sentiment with technical indicators improves both risk-adjusted performance (Sharpe Ratio) and trade profitability consistency (Win Ratio). This approach reduces volatility and enables more reliable trading outcomes.
 
-```mermaid
-flowchart TD
-    User -->|Inputs ticker| FrontEnd
-    FrontEnd --> BackEnd
-    BackEnd -->|Sends to pipeline| StockDataPipeline
-    BackEnd -->|Sends to pipeline| TextDataPipeline
-    StockDataPipeline -->|Generates signals| SignalGenerator
-    TextDataPipeline -->|Generates signals| SignalGenerator
-    SignalGenerator --> FrontEnd
-    FrontEnd -->|Presents data| User
-```
+![Flowchart]("C:\Users\user\Downloads\llm_trading_flowchart.png")
 
 # Tutorial
 [![User Tutorial](https://img.youtube.com/vi/6WdB-Rn9ieA/0.jpg)](https://youtu.be/6WdB-Rn9ieA)
