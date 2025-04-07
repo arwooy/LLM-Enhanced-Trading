@@ -1,0 +1,1485 @@
+from google.colab import drive
+drive.mount('/content/drive')
+import os
+import pandas as pd
+import gc
+import numpy as np
+import math
+import matplotlib.pyplot as plt
+
+def process_to_minute_bars(data_dir):
+    # List all CSV files in the directory
+    csv_files = [os.path.join(data_dir, file) for file in os.listdir(data_dir) if file.endswith('.csv')]
+
+    # Initialize an empty list to hold DataFrames
+    dataframes = []
+
+    # Read each CSV file and append to the list
+    for file in csv_files:
+        df = pd.read_csv(file)
+        dataframes.append(df)
+
+    # Concatenate all DataFrames into one
+    mega_df = pd.concat(dataframes, ignore_index=True)
+
+    # Ensure ClockTime is in datetime format
+    mega_df['ClockTime'] = pd.to_datetime(mega_df['ClockTime'], errors='coerce')
+
+    # Truncate ClockTime to minute level
+    mega_df['MinuteTime'] = mega_df['ClockTime'].dt.floor('T')
+
+    # Calculate minute-level TWAP
+    minute_level_df = mega_df.groupby('MinuteTime').apply(
+        lambda x: (x['TWAP'] * x['Volume']).sum() / x['Volume'].sum()
+    ).reset_index(name='TWAP')
+
+    # Calculate total volume for each minute
+    minute_level_df['TotalVolume'] = mega_df.groupby('MinuteTime')['Volume'].sum().values
+
+    # Clear large in-memory DataFrame to free RAM
+    del mega_df,dataframes
+    gc.collect()
+
+    # Return the processed minute-level DataFrame
+    return minute_level_df
+
+tickers = ['AMZN', 'AAPL', 'TSLA']
+years = [2022, 2023]
+
+# Dictionary to hold minute-level DataFrames for each ticker
+minute_bars = {}
+
+for ticker in tickers:
+    for year in years:
+        data_dir = f'/content/drive/My Drive/{year}/{ticker}/'
+        print(f"Processing data for {ticker} ({year})...")
+        try:
+            # Process minute bars for the current ticker and year
+            minute_bars[f"{ticker}_{year}"] = process_to_minute_bars(data_dir)
+        except Exception as e:
+            print(f"Failed to process {ticker} ({year}): {e}")
+
+# TSLA 2022
+tsla_2022_minute_level_df = minute_bars['TSLA_2022']
+split_timestamp = pd.Timestamp('2022-08-25 9:30:00')
+split_ratio = 3
+
+# Adjust TWAP and Volume for rows before the split
+tsla_2022_minute_level_df.loc[tsla_2022_minute_level_df['MinuteTime'] < split_timestamp, 'TWAP'] /= split_ratio
+tsla_2022_minute_level_df.loc[tsla_2022_minute_level_df['MinuteTime'] < split_timestamp, 'TotalVolume'] *= split_ratio
+
+# AMZN 2022
+amzn_2022_minute_level_df = minute_bars['AMZN_2022']
+split_timestamp = pd.Timestamp('2022-06-06 9:30:00')
+split_ratio = 20
+
+# Adjust TWAP and Volume for rows before the split
+amzn_2022_minute_level_df.loc[amzn_2022_minute_level_df['MinuteTime'] < split_timestamp, 'TWAP'] /= split_ratio
+amzn_2022_minute_level_df.loc[amzn_2022_minute_level_df['MinuteTime'] < split_timestamp, 'TotalVolume'] *= split_ratio
+
+def backtest_base_strategy(df, initial_cash=1_000_000, trade_amount=100_000, risk_limit=1_000_000):
+    # Initialize variables
+    cash = initial_cash
+    position_size = 0
+    avg_price = 0
+    trade_log = []
+    daily_pnl = {}
+    cumulative_pnl = [0]
+
+    for i in range(1, len(df)):
+        current_signal = df.loc[i, 'Signal']
+        current_price = df.loc[i, 'TWAP']
+        current_date = df.loc[i, 'MinuteTime'].date()
+
+        if np.isnan(current_price) or current_price <= 0:
+            continue
+
+        # Trade logic
+        if current_signal == 1:
+            if position_size < 0:
+                pnl = ((avg_price - current_price) / avg_price) * abs(position_size)
+                trade_log.append(pnl)
+                cumulative_pnl.append(cumulative_pnl[-1] + pnl)
+                daily_pnl[current_date] = daily_pnl.get(current_date, 0) + pnl
+                cash += abs(position_size)
+                position_size = 0
+                avg_price = 0
+
+            if position_size + trade_amount <= risk_limit and cash >= trade_amount:
+                cash -= trade_amount
+                avg_price = (avg_price * position_size + current_price * trade_amount) / (position_size + trade_amount)
+                position_size += trade_amount
+
+        elif current_signal == -1:
+            if position_size > 0:
+                pnl = ((current_price - avg_price) / avg_price) * position_size
+                trade_log.append(pnl)
+                cumulative_pnl.append(cumulative_pnl[-1] + pnl)
+                daily_pnl[current_date] = daily_pnl.get(current_date, 0) + pnl
+                cash += position_size
+                position_size = 0
+                avg_price = 0
+
+            if abs(position_size - trade_amount) <= risk_limit and cash >= trade_amount:
+                cash -= trade_amount
+                avg_price = (avg_price * abs(position_size) + current_price * trade_amount) / (abs(position_size) + trade_amount)
+                position_size -= trade_amount
+
+    if position_size != 0:
+        final_price = df['TWAP'].iloc[-1]
+        if position_size > 0:
+            final_pnl = ((final_price - avg_price) / avg_price) * position_size
+        else:
+            final_pnl = ((avg_price - final_price) / avg_price) * abs(position_size)
+        trade_log.append(final_pnl)
+        cumulative_pnl.append(cumulative_pnl[-1] + final_pnl)
+        daily_pnl[current_date] = daily_pnl.get(current_date, 0) + final_pnl
+        cash += abs(position_size)
+        position_size = 0
+
+    daily_pnl_values = np.array(list(daily_pnl.values()))
+    daily_return = 0.96 * daily_pnl_values / 2000000  # Adjusted for transaction costs
+
+    cumulative_pnl = np.array(cumulative_pnl)
+    drawdowns = cumulative_pnl - np.maximum.accumulate(cumulative_pnl)
+    max_drawdown = -np.min(drawdowns)
+
+    total_pnl = sum(trade_log)
+    total_return = 0.96 * total_pnl / 2000000
+    avg_daily_return = np.mean(daily_return) if len(daily_return) > 0 else 0
+    std_daily_return = np.std(daily_return) if len(daily_return) > 0 else 0
+    sharpe_ratio = (
+        (avg_daily_return - 0.05 / 252) / std_daily_return * math.sqrt(252)
+        if std_daily_return != 0 else np.nan
+    )
+    win_ratio = sum(1 for pnl in trade_log if pnl > 0) / len(trade_log) if trade_log else 0
+    avg_win = np.mean([pnl for pnl in trade_log if pnl > 0]) if trade_log else 0
+    avg_loss = np.mean([abs(pnl) for pnl in trade_log if pnl < 0]) if trade_log else 1e-8
+    profit_factor = avg_win / avg_loss if avg_loss != 0 else np.nan
+
+    return {
+        'Total Trades': len(trade_log),
+        'Total PnL': total_pnl,
+        'Annualized Sharpe': sharpe_ratio,
+        'Win Ratio': win_ratio,
+        'Profit Factor (Avg_Win / Avg_Loss)': profit_factor,
+        'Max Drawdown': max_drawdown,
+        'Cumulative PnL': cumulative_pnl,
+    }
+
+
+def backtest_new_strategy(df, initial_cash=1_000_000, risk_limit=1_000_000):
+    # Initialize variables
+    cash = initial_cash
+    position_size = 0  # Total dollar value of the position (positive = long, negative = short)
+    avg_price = 0  # Average price of the position
+    trade_log = []  # Track PnL of each trade
+    positive_trades = []  # Track PnL of positive sentiment trades
+    negative_trades = []  # Track PnL of negative sentiment trades
+    daily_pnl = {}  # To store aggregated PnL by day
+    cumulative_pnl = [0]  # Cumulative PnL for max drawdown
+
+    for i in range(1, len(df)):  # Start from the second row
+        current_signal = df.loc[i, 'new_signal']
+        current_price = df.loc[i, 'TWAP']
+        current_date = df.loc[i, 'MinuteTime'].date()  # Extract date
+
+        # Skip rows with NaN or invalid price
+        if np.isnan(current_price) or current_price <= 0:
+            continue
+
+        # Determine trade amount based on signal strength
+        if abs(current_signal) == 1:
+            trade_amount = 0.1 * initial_cash
+        elif abs(current_signal) == 2:
+            trade_amount = 0.15 * initial_cash
+        else:
+            continue  # Skip if no valid signal
+
+        # Trade logic
+        if current_signal > 0:  # Long signal
+            if position_size < 0:  # Flip from short to long
+                pnl = ((avg_price - current_price) / avg_price) * abs(position_size)
+                trade_log.append(pnl)
+                positive_trades.append(pnl)
+                cumulative_pnl.append(cumulative_pnl[-1] + pnl)
+                daily_pnl[current_date] = daily_pnl.get(current_date, 0) + pnl
+                cash += abs(position_size)  # Close short
+                position_size = 0
+                avg_price = 0
+
+            # Open or increase long position
+            if position_size + trade_amount <= risk_limit and cash >= trade_amount:
+                cash -= trade_amount
+                avg_price = (avg_price * position_size + current_price * trade_amount) / (position_size + trade_amount)
+                position_size += trade_amount
+
+        elif current_signal < 0:  # Short signal
+            if position_size > 0:  # Flip from long to short
+                pnl = ((current_price - avg_price) / avg_price) * position_size
+                trade_log.append(pnl)
+                negative_trades.append(pnl)
+                cumulative_pnl.append(cumulative_pnl[-1] + pnl)
+                daily_pnl[current_date] = daily_pnl.get(current_date, 0) + pnl
+                cash += position_size  # Close long
+                position_size = 0
+                avg_price = 0
+
+            # Open or increase short position
+            if abs(position_size - trade_amount) <= risk_limit and cash >= trade_amount:
+                cash -= trade_amount
+                avg_price = (avg_price * abs(position_size) + current_price * trade_amount) / (abs(position_size) + trade_amount)
+                position_size -= trade_amount
+
+    # Final PnL (close any open positions at the last price)
+    if position_size != 0:
+        final_price = df['TWAP'].iloc[-1]
+        if position_size > 0:  # Closing long position
+            final_pnl = ((final_price - avg_price) / avg_price) * position_size
+            positive_trades.append(final_pnl)
+        else:  # Closing short position
+            final_pnl = ((avg_price - final_price) / avg_price) * abs(position_size)
+            negative_trades.append(final_pnl)
+        trade_log.append(final_pnl)
+        cumulative_pnl.append(cumulative_pnl[-1] + final_pnl)
+        daily_pnl[current_date] = daily_pnl.get(current_date, 0) + final_pnl
+        cash += abs(position_size)
+        position_size = 0
+
+    daily_pnl_values = np.array(list(daily_pnl.values()))
+    daily_return = 0.96 * daily_pnl_values / 2000000  # Adjusted for transaction costs
+
+    cumulative_pnl = np.array(cumulative_pnl)
+    drawdowns = cumulative_pnl - np.maximum.accumulate(cumulative_pnl)
+    max_drawdown = -np.min(drawdowns)
+
+    total_pnl = sum(trade_log)
+    total_return = 0.96 * total_pnl / 2000000
+    avg_daily_return = np.mean(daily_return) if len(daily_return) > 0 else 0
+    std_daily_return = np.std(daily_return) if len(daily_return) > 0 else 0
+    sharpe_ratio = (
+        (avg_daily_return - 0.05 / 252) / std_daily_return * math.sqrt(252)
+        if std_daily_return != 0 else np.nan
+    )
+    win_ratio_positive = sum(1 for pnl in positive_trades if pnl > 0) / len(positive_trades) if positive_trades else 0
+    win_ratio_negative = sum(1 for pnl in negative_trades if pnl > 0) / len(negative_trades) if negative_trades else 0
+    aggregated_win_ratio = sum(1 for pnl in trade_log if pnl > 0) / len(trade_log) if trade_log else 0
+    avg_win = np.mean([pnl for pnl in trade_log if pnl > 0]) if trade_log else 0
+    avg_loss = np.mean([abs(pnl) for pnl in trade_log if pnl < 0]) if trade_log else 1e-8
+    profit_factor = avg_win / avg_loss if avg_loss != 0 else np.nan
+
+    return {
+        'Total Trades': len(trade_log),
+        'Total PnL': total_pnl,
+        'Annualized Sharpe': sharpe_ratio,
+        'Aggregated Win Ratio': aggregated_win_ratio,
+        'Win Ratio Positive': win_ratio_positive,
+        'Win Ratio Negative': win_ratio_negative,
+        'Profit Factor (Avg_Win / Avg_Loss)': profit_factor,
+        'Max Drawdown': max_drawdown,
+        'Cumulative PnL': cumulative_pnl,
+    }
+
+
+def modify_signal(df, ticker):
+    # Construct column names dynamically
+    sentiment_col = f"{ticker}_sentiment"
+    logit_col = f"{ticker}_logit"
+
+    # Initialize 'new_signal' column with 0
+    df['new_signal'] = 0
+
+    # Apply the conditions for 'new_signal'
+    df.loc[
+        (df[sentiment_col] == 'Positive') &
+        (df['Signal'] == 1) &
+        (df[logit_col] < 0.5),
+        'new_signal'
+    ] = 1
+
+    df.loc[
+        (df[sentiment_col] == 'Positive') &
+        (df['Signal'] == 1) &
+        (df[logit_col] >= 0.5),
+        'new_signal'
+    ] = 2
+
+    df.loc[
+        (df[sentiment_col] == 'Negative') &
+        (df['Signal'] == -1) &
+        (df[logit_col] < 0.5),
+        'new_signal'
+    ] = -1
+
+    df.loc[
+        (df[sentiment_col] == 'Negative') &
+        (df['Signal'] == -1) &
+        (df[logit_col] >= 0.5),
+        'new_signal'
+    ] = -2
+
+    return df
+
+
+def load_sentiment_data(base_dir, tickers, years):
+    sentiment_data = {}
+
+    for ticker in tickers:
+        for year in years:
+            file_path = os.path.join(base_dir, f"{ticker}_{year}.parquet")
+            if os.path.exists(file_path):
+                sentiment_data[f"{ticker}_{year}"] = pd.read_parquet(file_path)
+                print(f"Loaded sentiment data for {ticker} {year}.")
+            else:
+                print(f"File not found: {file_path}")
+
+    return sentiment_data
+
+base_dir = '/content/drive/My Drive/historical_reddit/'
+tickers = ['TSLA', 'AAPL', 'AMZN']
+years = [2022, 2023]
+
+sentiment_data_dict = load_sentiment_data(base_dir, tickers, years)
+
+def merge_sentiment(minute_df, sentiment_df, ticker):
+    # Ensure timestamp columns are in datetime format
+    sentiment_df['timestamp'] = pd.to_datetime(sentiment_df['timestamp'])
+    minute_df['MinuteTime'] = pd.to_datetime(minute_df['MinuteTime'])
+
+    # Merge with a left join using asof merge
+    merged_df = pd.merge_asof(
+        minute_df.sort_values('MinuteTime'),
+        sentiment_df.sort_values('timestamp'),
+        left_on='MinuteTime',
+        right_on='timestamp',
+        direction='backward'
+    )
+
+    # Shift sentiment columns to simulate delay in execution
+    sentiment_col = f'{ticker}_sentiment'
+    logit_col = f'{ticker}_logit'
+    merged_df[sentiment_col] = merged_df[sentiment_col].shift(1).fillna('Neutral')
+    merged_df[logit_col] = merged_df[logit_col].shift(1).fillna(1)
+
+    return merged_df
+
+def sma_signal(df, fast_window=5, slow_window=30):
+    """
+    Generates SMA crossover signals for a given DataFrame.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame containing the TWAP column.
+        fast_window (int): Window size for the fast SMA.
+        slow_window (int): Window size for the slow SMA.
+
+    Returns:
+        pd.DataFrame: Updated DataFrame with Fast_SMA, Slow_SMA, and Signal columns.
+    """
+    # Calculate SMAs
+    df['Fast_SMA'] = df['TWAP'].rolling(window=fast_window, min_periods=fast_window).mean()
+    df['Slow_SMA'] = df['TWAP'].rolling(window=slow_window, min_periods=slow_window).mean()
+
+    # Initialize Signal column
+    df['Signal'] = 0
+
+    # Detect bullish crossover (Fast crosses Slow from below)
+    df.loc[
+        (df['Fast_SMA'] > df['Slow_SMA']) &
+        (df['Fast_SMA'].shift(1) <= df['Slow_SMA'].shift(1)),
+        'Signal'
+    ] = 1  # Long
+
+    # Detect bearish crossover (Fast crosses Slow from above)
+    df.loc[
+        (df['Fast_SMA'] < df['Slow_SMA']) &
+        (df['Fast_SMA'].shift(1) >= df['Slow_SMA'].shift(1)),
+        'Signal'
+    ] = -1  # Short
+
+    return df
+
+tsla_2022_minute_level_df = minute_bars['TSLA_2022']
+tsla_2022_df = sma_signal(tsla_2022_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(tsla_2022_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+tsla_merged_2022 = merge_sentiment(tsla_2022_df,sentiment_data_dict['TSLA_2022'],'TSLA')
+tsla_merged_2022 = modify_signal(tsla_merged_2022,'TSLA')
+results = backtest_new_strategy(tsla_merged_2022)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+tsla_2023_minute_level_df = minute_bars['TSLA_2023']
+tsla_2023_df = sma_signal(tsla_2023_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(tsla_2023_df)
+
+# Print results
+print("TSLA 2022 Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+tsla_merged_2023 = merge_sentiment(tsla_2023_df,sentiment_data_dict['TSLA_2023'],'TSLA')
+tsla_merged_2023 = modify_signal(tsla_merged_2023,'TSLA')
+results = backtest_new_strategy(tsla_merged_2023)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+amzn_2022_minute_level_df = minute_bars['AMZN_2022']
+amzn_2022_df = sma_signal(amzn_2022_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(amzn_2022_df)
+
+# Print results
+print("AMZN 2022 Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+amzn_merged_2022 = merge_sentiment(amzn_2022_df,sentiment_data_dict['AMZN_2022'],'AMZN')
+amzn_merged_2022 = modify_signal(amzn_merged_2022,'AMZN')
+results = backtest_new_strategy(amzn_merged_2022)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+amzn_2023_minute_level_df = minute_bars['AMZN_2023']
+amzn_2023_df = sma_signal(amzn_2023_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(amzn_2023_df)
+
+# Print results
+print("AMZN 2023 Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+amzn_merged_2023 = merge_sentiment(amzn_2023_df,sentiment_data_dict['AMZN_2023'],'AMZN')
+amzn_merged_2023 = modify_signal(amzn_merged_2023,'AMZN')
+results = backtest_new_strategy(amzn_merged_2023)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+aapl_2022_minute_level_df = minute_bars['AAPL_2022']
+aapl_2022_df = sma_signal(aapl_2022_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(aapl_2022_df)
+
+# Print results
+print("AAPL 2022 Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+aapl_merged_2022 = merge_sentiment(aapl_2022_df,sentiment_data_dict['AAPL_2022'],'AAPL')
+aapl_merged_2022 = modify_signal(aapl_merged_2022,'AAPL')
+results = backtest_new_strategy(aapl_merged_2022)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+aapl_2023_minute_level_df = minute_bars['AAPL_2023']
+aapl_2023_df = sma_signal(aapl_2023_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(amzn_2023_df)
+
+# Print results
+print("AAPL 2023 Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+aapl_merged_2023 = merge_sentiment(aapl_2023_df,sentiment_data_dict['AAPL_2023'],'AAPL')
+aapl_merged_2023 = modify_signal(aapl_merged_2023,'AAPL')
+results = backtest_new_strategy(aapl_merged_2023)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+def calculate_rsi_signal(df, period=15, overbought=70, oversold=30):
+    """
+    Calculate RSI and generate trading signals based on it.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame containing 'MinuteTime' and 'TWAP'.
+        period (int): RSI period (default is 15 for 15 minutes).
+        overbought (int): Overbought threshold (default is 70).
+        oversold (int): Oversold threshold (default is 30).
+
+    Returns:
+        pd.DataFrame: DataFrame with an additional 'Signal' column (1 for long, -1 for short, 0 otherwise).
+    """
+    df = df.copy()
+
+    # Calculate price changes
+    df['Change'] = df['TWAP'].diff()
+
+    # Calculate gains and losses
+    df['Gain'] = df['Change'].apply(lambda x: x if x > 0 else 0)
+    df['Loss'] = df['Change'].apply(lambda x: -x if x < 0 else 0)
+
+    # Calculate average gains and losses
+    df['Avg_Gain'] = df['Gain'].rolling(window=period, min_periods=period).mean()
+    df['Avg_Loss'] = df['Loss'].rolling(window=period, min_periods=period).mean()
+
+    # Calculate RS (Relative Strength) and RSI
+    df['RS'] = df['Avg_Gain'] / df['Avg_Loss']
+    df['RSI'] = 100 - (100 / (1 + df['RS']))
+
+    # Generate signals
+     # Initialize Signal column with neutral
+    df['Signal'] = 0
+
+    # Reversal signals
+    df.loc[df['RSI'] > overbought, 'Signal'] = -1  # Short when RSI is overbought
+    df.loc[df['RSI'] < oversold, 'Signal'] = 1    # Long when RSI is oversold
+
+    # Trend-following signals
+    df.loc[(df['RSI'] > 50) & (df['RSI'] <= overbought), 'Signal'] = 1  # Long in bullish trend
+    df.loc[(df['RSI'] < 50) & (df['RSI'] >= oversold), 'Signal'] = -1  # Short in bearish trend
+    # Drop intermediate columns to clean up
+    df = df[['MinuteTime', 'TWAP', 'TotalVolume', 'RSI', 'Signal']]
+
+    return df
+
+
+tsla_2022_minute_level_df = minute_bars['TSLA_2022']
+tsla_2022_df = calculate_rsi_signal(tsla_2022_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(tsla_2022_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+tsla_merged_2022 = merge_sentiment(tsla_2022_df,sentiment_data_dict['TSLA_2022'],'TSLA')
+tsla_merged_2022 = modify_signal(tsla_merged_2022,'TSLA')
+results = backtest_new_strategy(tsla_merged_2022)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+tsla_2023_minute_level_df = minute_bars['TSLA_2023']
+tsla_2023_df = calculate_rsi_signal(tsla_2023_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(tsla_2023_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+tsla_merged_2023 = merge_sentiment(tsla_2023_df,sentiment_data_dict['TSLA_2023'],'TSLA')
+tsla_merged_2023 = modify_signal(tsla_merged_2023,'TSLA')
+results = backtest_new_strategy(tsla_merged_2023)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+amzn_2022_minute_level_df = minute_bars['AMZN_2022']
+amzn_2022_df = calculate_rsi_signal(amzn_2022_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(amzn_2022_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+amzn_merged_2022 = merge_sentiment(amzn_2022_df,sentiment_data_dict['AMZN_2022'],'AMZN')
+amzn_merged_2022 = modify_signal(amzn_merged_2022,'AMZN')
+results = backtest_new_strategy(amzn_merged_2022)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+amzn_2023_minute_level_df = minute_bars['AMZN_2023']
+amzn_2023_df = calculate_rsi_signal(amzn_2023_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(tsla_2023_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+amzn_merged_2023 = merge_sentiment(amzn_2023_df,sentiment_data_dict['AMZN_2023'],'AMZN')
+amzn_merged_2023 = modify_signal(amzn_merged_2023,'AMZN')
+results = backtest_new_strategy(amzn_merged_2023)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+aapl_2022_minute_level_df = minute_bars['AAPL_2022']
+aapl_2022_df = calculate_rsi_signal(aapl_2022_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(aapl_2022_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+aapl_merged_2022 = merge_sentiment(aapl_2022_df,sentiment_data_dict['AAPL_2022'],'AAPL')
+aapl_merged_2022 = modify_signal(aapl_merged_2022,'AAPL')
+results = backtest_new_strategy(aapl_merged_2022)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+aapl_2023_minute_level_df = minute_bars['AAPL_2023']
+aapl_2023_df = calculate_rsi_signal(aapl_2023_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(aapl_2023_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+aapl_merged_2023 = merge_sentiment(aapl_2023_df,sentiment_data_dict['AAPL_2023'],'AAPL')
+aapl_merged_2023 = modify_signal(aapl_merged_2023,'AAPL')
+results = backtest_new_strategy(aapl_merged_2023)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+def stochastic_signal(df, lookback_period=14, overbought=80, oversold=20):
+    """
+    Calculates the Stochastic Oscillator and generates trading signals.
+
+    Parameters:
+        df (pd.DataFrame): DataFrame containing 'TWAP'.
+        lookback_period (int): Lookback period for the Stochastic Oscillator.
+        overbought (int): Overbought threshold.
+        oversold (int): Oversold threshold.
+
+    Returns:
+        pd.DataFrame: DataFrame with %K, %D, and Signal columns.
+    """
+    # Calculate %K
+    df['Lowest_Low'] = df['TWAP'].rolling(window=lookback_period).min()
+    df['Highest_High'] = df['TWAP'].rolling(window=lookback_period).max()
+    df['%K'] = (df['TWAP'] - df['Lowest_Low']) / (df['Highest_High'] - df['Lowest_Low']) * 100
+
+    # Calculate %D
+    df['%D'] = df['%K'].rolling(window=3).mean()
+
+    # Generate signals
+    df['Signal'] = 0
+    # Long when %K crosses above %D in oversold zone
+    df.loc[(df['%K'] > df['%D']) & (df['%K'].shift(1) <= df['%D'].shift(1)) & (df['%K'] < oversold), 'Signal'] = 1
+    # Short when %K crosses below %D in overbought zone
+    df.loc[(df['%K'] < df['%D']) & (df['%K'].shift(1) >= df['%D'].shift(1)) & (df['%K'] > overbought), 'Signal'] = -1
+
+    return df
+
+
+tsla_2022_minute_level_df = minute_bars['TSLA_2022']
+tsla_2022_df = stochastic_signal(tsla_2022_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(tsla_2022_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+tsla_merged_2022 = merge_sentiment(tsla_2022_df,sentiment_data_dict['TSLA_2022'],'TSLA')
+tsla_merged_2022 = modify_signal(tsla_merged_2022,'TSLA')
+results = backtest_new_strategy(tsla_merged_2022)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+tsla_2023_minute_level_df = minute_bars['TSLA_2023']
+tsla_2023_df = stochastic_signal(tsla_2023_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(tsla_2023_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+tsla_merged_2023 = merge_sentiment(tsla_2023_df,sentiment_data_dict['TSLA_2023'],'TSLA')
+tsla_merged_2023 = modify_signal(tsla_merged_2023,'TSLA')
+results = backtest_new_strategy(tsla_merged_2023)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+amzn_2022_minute_level_df = minute_bars['AMZN_2022']
+amzn_2022_df = stochastic_signal(amzn_2022_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(amzn_2022_df)
+
+# Print results
+print("AMZN 2022 Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+amzn_merged_2022 = merge_sentiment(amzn_2022_df,sentiment_data_dict['AMZN_2022'],'AMZN')
+amzn_merged_2022 = modify_signal(amzn_merged_2022,'AMZN')
+results = backtest_new_strategy(amzn_merged_2022)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+amzn_2023_minute_level_df = minute_bars['AMZN_2023']
+amzn_2023_df = stochastic_signal(amzn_2023_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(tsla_2023_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+amzn_merged_2023 = merge_sentiment(amzn_2023_df,sentiment_data_dict['AMZN_2023'],'AMZN')
+amzn_merged_2023 = modify_signal(amzn_merged_2023,'AMZN')
+results = backtest_new_strategy(amzn_merged_2023)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+aapl_2022_minute_level_df = minute_bars['AAPL_2022']
+aapl_2022_df = stochastic_signal(aapl_2022_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(aapl_2022_df)
+
+# Print results
+print("AAPL 2022 Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+aapl_merged_2022 = merge_sentiment(aapl_2022_df,sentiment_data_dict['AAPL_2022'],'AAPL')
+aapl_merged_2022 = modify_signal(aapl_merged_2022,'AAPL')
+results = backtest_new_strategy(aapl_merged_2022)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+aapl_2023_minute_level_df = minute_bars['AAPL_2023']
+aapl_2023_df = stochastic_signal(aapl_2023_minute_level_df)
+# Run the backtest
+results = backtest_base_strategy(aapl_2023_df)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()
+
+# Run the backtest
+aapl_merged_2023 = merge_sentiment(aapl_2023_df,sentiment_data_dict['AAPL_2023'],'AAPL')
+aapl_merged_2023 = modify_signal(aapl_merged_2023,'AAPL')
+results = backtest_new_strategy(aapl_merged_2023)
+
+# Print results
+print("Backtest Results:")
+for key, value in results.items():
+    if key != 'Cumulative PnL':  # Skip printing the full cumulative PnL
+        print(f"{key}: {value}")
+
+# Plot Cumulative PnL and Drawdown
+plt.figure(figsize=(12, 6))
+
+# Plot Cumulative PnL
+plt.plot(results['Cumulative PnL'], label="Cumulative PnL", color="blue")
+
+# Highlight Drawdowns
+cumulative_pnl = results['Cumulative PnL']
+peak_pnl = np.maximum.accumulate(cumulative_pnl)
+plt.fill_between(range(len(cumulative_pnl)), cumulative_pnl, peak_pnl, color="red", alpha=0.3, label="Drawdown")
+
+plt.title("Cumulative PnL and Drawdowns (New Strategy)")
+plt.xlabel("Trades")
+plt.ylabel("Cumulative PnL")
+plt.legend()
+plt.show()

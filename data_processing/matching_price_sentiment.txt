@@ -1,0 +1,453 @@
+import pandas as pd
+import numpy as np
+from google.colab import drive
+import re
+drive.mount('/content/drive')
+
+import pandas as pd
+import swifter
+import re
+
+# File path
+file_path = '/content/drive/My Drive/historical_reddit/submissions_with_comments_2022.csv'
+output_file = '/content/drive/My Drive/historical_reddit/filtered_submissions_2022.parquet'
+
+# Stock tickers and company names
+stocks = {
+    'TSLA': 'Tesla',
+    'AMZN': 'Amazon',
+    'AAPL': 'Apple',
+    'GOOGL': 'Google',
+    'MSFT': 'Microsoft'
+}
+
+# Compile regex patterns for tickers and company names
+patterns = {ticker: (re.compile(fr"\b{re.escape(ticker.lower())}\b"),
+                     re.compile(fr"\b{re.escape(company.lower())}\b"))
+            for ticker, company in stocks.items()}
+
+# Chunk size
+chunk_size = 10**6
+
+# Process data in chunks
+filtered_chunks = []
+for chunk in pd.read_csv(file_path, chunksize=chunk_size, usecols=['comment_body', 'submission_title', 'submission_selftext', 'submission_score', 'comment_date', 'comment_time']):
+    # Combine date and time into a single timestamp
+    chunk['timestamp'] = pd.to_datetime(chunk['comment_date'] + ' ' + chunk['comment_time'])
+
+    # Combine text columns
+    chunk['combined_text'] = (chunk['comment_body'].fillna('') + ' ' +
+                              chunk['submission_title'].fillna('') + ' ' +
+                              chunk['submission_selftext'].fillna('')).str.lower()
+
+    # Extract stock tickers mentioned in the text
+    def extract_stocks(text):
+        mentioned = [ticker for ticker, (ticker_pattern, company_pattern) in patterns.items()
+                     if re.search(ticker_pattern, text) or re.search(company_pattern, text)]
+        return ','.join(mentioned) if mentioned else None
+
+    chunk['mentioned_tickers'] = chunk['combined_text'].swifter.apply(extract_stocks)
+
+    # Filter rows where at least one stock is mentioned
+    filtered_chunk = chunk[chunk['mentioned_tickers'].notna()]
+
+    # Append filtered chunk to the list
+    filtered_chunks.append(filtered_chunk)
+
+# Concatenate filtered chunks
+final_filtered_data = pd.concat(filtered_chunks)
+
+# Keep only required columns
+final_filtered_data = final_filtered_data[['timestamp', 'submission_score', 'mentioned_tickers', 'combined_text']]
+
+# Save to parquet
+final_filtered_data.to_parquet(output_file, index=False)
+
+print(f"Filtered data saved to {output_file}")
+
+
+# File path
+file_path = '/content/drive/My Drive/historical_reddit/submissions_with_comments_2023.csv'
+output_file = '/content/drive/My Drive/historical_reddit/filtered_submissions_2023.parquet'
+
+# Stock tickers and company names
+stocks = {
+    'TSLA': 'Tesla',
+    'AMZN': 'Amazon',
+    'AAPL': 'Apple',
+    'GOOGL': 'Google',
+    'MSFT': 'Microsoft'
+}
+
+# Compile regex patterns for tickers and company names
+patterns = {ticker: (re.compile(fr"\b{re.escape(ticker.lower())}\b"),
+                     re.compile(fr"\b{re.escape(company.lower())}\b"))
+            for ticker, company in stocks.items()}
+
+# Chunk size
+chunk_size = 10**6
+
+# Process data in chunks
+filtered_chunks = []
+for chunk in pd.read_csv(file_path, chunksize=chunk_size, usecols=['comment_body', 'submission_title', 'submission_selftext', 'submission_score', 'comment_date', 'comment_time']):
+    # Combine date and time into a single timestamp
+    chunk['timestamp'] = pd.to_datetime(chunk['comment_date'] + ' ' + chunk['comment_time'])
+
+    # Combine text columns
+    chunk['combined_text'] = (chunk['comment_body'].fillna('') + ' ' +
+                              chunk['submission_title'].fillna('') + ' ' +
+                              chunk['submission_selftext'].fillna('')).str.lower()
+
+    # Extract stock tickers mentioned in the text
+    def extract_stocks(text):
+        mentioned = [ticker for ticker, (ticker_pattern, company_pattern) in patterns.items()
+                     if re.search(ticker_pattern, text) or re.search(company_pattern, text)]
+        return ','.join(mentioned) if mentioned else None
+
+    chunk['mentioned_tickers'] = chunk['combined_text'].swifter.apply(extract_stocks)
+
+    # Filter rows where at least one stock is mentioned
+    filtered_chunk = chunk[chunk['mentioned_tickers'].notna()]
+
+    # Append filtered chunk to the list
+    filtered_chunks.append(filtered_chunk)
+
+# Concatenate filtered chunks
+final_filtered_data = pd.concat(filtered_chunks)
+
+# Keep only required columns
+final_filtered_data = final_filtered_data[['timestamp', 'submission_score', 'mentioned_tickers', 'combined_text']]
+
+# Save to parquet
+final_filtered_data.to_parquet(output_file, index=False)
+
+print(f"Filtered data saved to {output_file}")
+
+import pandas as pd
+import swifter
+import re
+
+# File path
+file_path = '/content/drive/My Drive/historical_reddit/submissions_with_comments_2021.csv'
+output_file = '/content/drive/My Drive/historical_reddit/filtered_submissions_2021.parquet'
+
+# Stock tickers and company names
+stocks = {
+    'TSLA': 'Tesla',
+    'AMZN': 'Amazon',
+    'AAPL': 'Apple',
+    'GOOGL': 'Google',
+    'MSFT': 'Microsoft'
+}
+
+# Compile regex patterns for tickers and company names
+patterns = {ticker: (re.compile(fr"\b{re.escape(ticker.lower())}\b"),
+                     re.compile(fr"\b{re.escape(company.lower())}\b"))
+            for ticker, company in stocks.items()}
+
+# Chunk size
+chunk_size = 10**6
+
+# Process data in chunks
+filtered_chunks = []
+for chunk in pd.read_csv(file_path, chunksize=chunk_size, usecols=['comment_body', 'submission_title', 'submission_selftext', 'submission_score', 'comment_date', 'comment_time']):
+    # Combine date and time into a single timestamp
+    chunk['timestamp'] = pd.to_datetime(chunk['comment_date'] + ' ' + chunk['comment_time'])
+
+    # Combine text columns
+    chunk['combined_text'] = (chunk['comment_body'].fillna('') + ' ' +
+                              chunk['submission_title'].fillna('') + ' ' +
+                              chunk['submission_selftext'].fillna('')).str.lower()
+
+    # Extract stock tickers mentioned in the text
+    def extract_stocks(text):
+        mentioned = [ticker for ticker, (ticker_pattern, company_pattern) in patterns.items()
+                     if re.search(ticker_pattern, text) or re.search(company_pattern, text)]
+        return ','.join(mentioned) if mentioned else None
+
+    chunk['mentioned_tickers'] = chunk['combined_text'].swifter.apply(extract_stocks)
+
+    # Filter rows where at least one stock is mentioned
+    filtered_chunk = chunk[chunk['mentioned_tickers'].notna()]
+
+    # Append filtered chunk to the list
+    filtered_chunks.append(filtered_chunk)
+
+# Concatenate filtered chunks
+final_filtered_data = pd.concat(filtered_chunks)
+
+# Keep only required columns
+final_filtered_data = final_filtered_data[['timestamp', 'submission_score', 'mentioned_tickers', 'combined_text']]
+
+# Save to parquet
+final_filtered_data.to_parquet(output_file, index=False)
+
+print(f"Filtered data saved to {output_file}")
+
+df = pd.read_parquet('/content/drive/My Drive/historical_reddit/filtered_submissions_2021.parquet')
+
+df
+
+import pandas as pd
+import warnings
+warnings.filterwarnings('ignore')
+
+# File paths for 2021, 2022, and 2023 parquet files
+file_paths = [
+    '/content/drive/My Drive/historical_reddit/filtered_submissions_2021.parquet',
+    '/content/drive/My Drive/historical_reddit/filtered_submissions_2022.parquet',
+    '/content/drive/My Drive/historical_reddit/filtered_submissions_2023.parquet'
+]
+
+# List of tickers
+tickers = ['TSLA', 'AMZN', 'AAPL', 'GOOGL', 'MSFT']
+
+# Aggregation function
+def aggregate_minute_level(file_path, tickers):
+    # Load data
+    df = pd.read_parquet(file_path)
+
+    # Ensure timestamp is at the minute level
+    df['timestamp'] = pd.to_datetime(df['timestamp']).dt.floor('T')  # Truncate to minute-level
+
+    # Expand rows with multiple tickers
+    def expand_row(row):
+        tickers_list = row['mentioned_tickers'].split(',')
+        expanded_rows = []
+        for ticker in tickers_list:
+            expanded_row = row.copy()
+            expanded_row['mentioned_tickers'] = ticker
+            expanded_rows.append(expanded_row)
+        return expanded_rows
+
+    expanded_rows = []
+    for _, row in df.iterrows():
+        if ',' in row['mentioned_tickers']:  # If multiple tickers are mentioned
+            expanded_rows.extend(expand_row(row))
+        else:
+            expanded_rows.append(row)
+
+    df = pd.DataFrame(expanded_rows)
+
+    # Initialize an empty DataFrame for aggregation
+    aggregated_data = pd.DataFrame({'timestamp': df['timestamp'].unique()})
+    aggregated_data.sort_values(by='timestamp', inplace=True)  # Sort timestamps
+
+    # Process each ticker
+    for ticker in tickers:
+        # Filter rows mentioning the current ticker
+        ticker_data = df[df['mentioned_tickers'] == ticker]
+
+        # Group by minute-level timestamp
+        grouped = ticker_data.groupby('timestamp').agg({
+            'combined_text': lambda x: ' '.join(x),  # Concatenate Reddit content
+            'submission_score': 'mean'  # Average submission scores
+        }).reset_index()
+
+        # Merge with the aggregated DataFrame
+        aggregated_data = pd.merge(
+            aggregated_data,
+            grouped,
+            on='timestamp',
+            how='left',
+            suffixes=('', f'_{ticker}')
+        )
+
+        # Rename columns for the ticker
+        aggregated_data.rename(columns={
+            'combined_text': f'{ticker}_reddit',
+            'submission_score': f'{ticker}_score'
+        }, inplace=True)
+
+    # Fill missing values
+    # Text columns should have empty strings, and numeric columns should have 0
+    for ticker in tickers:
+        aggregated_data[f'{ticker}_reddit'] = aggregated_data[f'{ticker}_reddit'].fillna('')
+        aggregated_data[f'{ticker}_score'] = aggregated_data[f'{ticker}_score'].fillna(0)
+
+    return aggregated_data
+
+# Process files for 2021, 2022, and 2023
+aggregated_2021 = aggregate_minute_level(file_paths[0], tickers)
+aggregated_2022 = aggregate_minute_level(file_paths[1], tickers)
+aggregated_2023 = aggregate_minute_level(file_paths[2], tickers)
+
+# Save aggregated data to new parquet files
+aggregated_2021.to_parquet('/content/drive/My Drive/historical_reddit/aggregated_2021.parquet', index=False)
+aggregated_2022.to_parquet('/content/drive/My Drive/historical_reddit/aggregated_2022.parquet', index=False)
+aggregated_2023.to_parquet('/content/drive/My Drive/historical_reddit/aggregated_2023.parquet', index=False)
+
+print("Aggregated data saved for 2021, 2022, and 2023.")
+
+df = pd.read_parquet('/content/drive/My Drive/historical_reddit/aggregated_2021.parquet')
+df
+
+!pip install transformers==4.40.1 peft==0.5.0
+!pip install sentencepiece
+!pip install accelerate
+!pip install torch
+!pip install datasets
+!pip install bitsandbytes
+
+from huggingface_hub import login
+
+# Log in to Hugging Face with your token
+login("YOUR-HF-TOKEN")
+
+from transformers import LlamaForCausalLM, LlamaTokenizerFast
+from peft import PeftModel
+import torch
+
+# Base model and PEFT (LoRA) model
+base_model = "meta-llama/Meta-Llama-3-8B"
+peft_model = "FinGPT/fingpt-mt_llama3-8b_lora"
+
+# Load tokenizer
+tokenizer = LlamaTokenizerFast.from_pretrained(base_model, trust_remote_code=True, use_auth_token=True)
+tokenizer.pad_token = tokenizer.eos_token
+
+# Load base model with 16-bit precision
+model = LlamaForCausalLM.from_pretrained(base_model,
+                    trust_remote_code=True,
+                    device_map="auto",
+                    torch_dtype=torch.float16)  # Enable 16-bit precision
+
+# Apply LoRA-based PEFT model
+model = PeftModel.from_pretrained(model, peft_model, torch_dtype=torch.float16)
+model = model.eval()
+
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = model.to(device)
+
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
+import gc
+import torch
+import pandas as pd
+from tqdm import tqdm
+import warnings
+warnings.filterwarnings('ignore')
+
+# Define function for sentiment analysis
+def get_sentiment(text):
+    if not text:  # If the text is empty, return neutral sentiment
+        return "Neutral", 1.0  # Neutral with logit probability 1.0
+    len_text = min(len(text),2000)
+    text = text[:len_text]
+    # Define the prompt for the model
+    prompt = f'''Instruction: What is the sentiment of this news? Please choose an answer from [Positive, Negative, Neutral].\nInput: {text}\nAnswer: '''
+
+    # Tokenize directly on the GPU for efficiency
+    inputs = tokenizer(prompt, return_tensors="pt", padding=True, max_length=128).to(device)
+
+    # Forward pass on GPU
+    with torch.no_grad():
+        outputs = model(**inputs)
+
+    # Get logits for the last token and move them back to CPU
+    logits = outputs.logits[:, -1, :].to("cpu")
+    probs = torch.softmax(logits, dim=-1)
+
+    # Class tokens for Positive, Negative, Neutral
+    class_tokens = tokenizer(["Positive", "Negative", "Neutral"], add_special_tokens=False)["input_ids"]
+    class_probs = {tokenizer.decode(token_id): probs[0, token_id].item() for token_id in class_tokens}
+
+    # Get the most probable sentiment
+    sentiment = max(class_probs, key=class_probs.get)
+
+    # Clear intermediate variables
+    del inputs, outputs, logits, probs
+    torch.cuda.empty_cache()
+    return sentiment, class_probs[sentiment]
+
+# Parameters
+batch_size = 500  # Number of rows per batch
+output_dir = '/content/drive/My Drive/historical_reddit/'  # Directory for individual ticker files
+
+# Process the parquet files
+file_paths = [
+    '/content/drive/My Drive/historical_reddit/aggregated_2023.parquet'
+]
+
+# Warm-up pass
+print("Running warm-up pass to stabilize GPU memory...")
+dummy_input = tokenizer("Warm-up", return_tensors="pt", padding=True, max_length=128).to(device)
+with torch.no_grad():
+    _ = model(**dummy_input)
+torch.cuda.empty_cache()
+
+# Process each file
+for input_path in file_paths:
+    year = input_path.split('_')[-1].split('.')[0]  # Extract year from filename
+    print(f"\nProcessing file: {input_path} (Year: {year})")
+
+    # Load the parquet file
+    df = pd.read_parquet(input_path)
+
+    for ticker in ['TSLA']:
+        print(f"\nProcessing sentiment for ticker: {ticker}")
+
+        reddit_col = f"{ticker}_reddit"
+        sentiment_col = f"{ticker}_sentiment"
+        logit_col = f"{ticker}_logit"
+
+        # Initialize lists for sentiments and logits
+        sentiments = []
+        logits = []
+
+        # Process DataFrame in batches
+        num_batches = (len(df) + batch_size - 1) // batch_size  # Calculate total number of batches
+        for batch_num in tqdm(range(num_batches), desc=f"Ticker: {ticker} Batches"):
+            # Extract batch
+            start_idx = batch_num * batch_size
+            end_idx = min((batch_num + 1) * batch_size, len(df))
+            batch_df = df.iloc[start_idx:end_idx]
+
+            # Process each row in the batch
+            batch_sentiments = []
+            batch_logits = []
+            for text in batch_df[reddit_col].fillna("").tolist():
+                sentiment, logit = get_sentiment(text)  # GPU inference
+                batch_sentiments.append(sentiment)
+                batch_logits.append(logit)
+
+            # Append batch results to the main lists
+            sentiments.extend(batch_sentiments)
+            logits.extend(batch_logits)
+
+            # Clear GPU memory periodically
+            del batch_df, batch_sentiments, batch_logits
+            torch.cuda.empty_cache()
+            gc.collect()
+
+        # Create and save a DataFrame for this ticker
+        ticker_df = pd.DataFrame({
+            'timestamp': df['timestamp'],  # Assuming there's a timestamp column
+            reddit_col: df[reddit_col],
+            sentiment_col: sentiments,
+            logit_col: logits
+        })
+
+        # Save the ticker DataFrame to a separate parquet file
+        ticker_output_path = f"{output_dir}/{ticker}_{year}.parquet"
+        ticker_df.to_parquet(ticker_output_path, index=False)
+        print(f"Saved results for {ticker} to {ticker_output_path}")
+
+        # Clear memory for the ticker
+        del ticker_df, sentiments, logits
+        torch.cuda.empty_cache()
+        gc.collect()
+
+    # Clear memory for the file
+    del df
+    torch.cuda.empty_cache()
+    gc.collect()
+
+    print(f"Cleared GPU cache and unnecessary variables for: {input_path}")
+
+import pandas as pd
+df = pd.read_parquet('/content/drive/My Drive/historical_reddit/TSLA_2023.parquet')
+
+df['TSLA_sentiment'].value_counts()
